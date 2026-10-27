@@ -41,6 +41,41 @@ class CreateUserTest {
         accessToken = response.jsonPath().getString("accessToken");
     }
 
+    @Test
+    void createAlreadyRegisteredUserReturnsError() {
+        Response firstResponse = createUser();
+
+        firstResponse.then()
+                .statusCode(200)
+                .body("success", equalTo(true));
+
+        accessToken = firstResponse.jsonPath().getString("accessToken");
+
+        Response secondResponse = createUser();
+
+        secondResponse.then()
+                .statusCode(403)
+                .body("success", equalTo(false));
+    }
+
+    @Test
+    void createUserWithoutEmailReturnsError() {
+        Map<String, String> user = new HashMap<>();
+        user.put("password", password);
+        user.put("name", name);
+
+        Response response = given()
+                .baseUri(BASE_URL)
+                .contentType("application/json")
+                .body(user)
+                .when()
+                .post("/api/auth/register");
+
+        response.then()
+                .statusCode(403)
+                .body("success", equalTo(false));
+    }
+
     @Step("Создать пользователя")
     private Response createUser() {
         Map<String, String> user = new HashMap<>();
