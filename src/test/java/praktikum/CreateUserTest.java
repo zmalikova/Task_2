@@ -2,24 +2,21 @@
 package praktikum;
 
 import io.qameta.allure.Step;
+import praktikum.client.UserClient;
 import io.restassured.response.Response;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.DisplayName;
+import io.qameta.allure.Description;
 import org.junit.jupiter.api.Test;
 
-import java.util.HashMap;
-import java.util.Map;
 import java.util.UUID;
 
-import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.notNullValue;
 
 class CreateUserTest {
 
-    private static final String BASE_URL =
-            "https://qa-stellarburgers.education-services.ru";
-
-    private String accessToken;
+    private final UserClient userClient = new UserClient();
 
     private final String email =
             "student_" + UUID.randomUUID() + "@yandex.ru";
@@ -27,9 +24,15 @@ class CreateUserTest {
     private final String password = "TestPassword123";
     private final String name = "Test Student";
 
+    private String accessToken;
+
     @Test
+    @DisplayName("Создание уникального пользователя")
+    @Description("Проверка успешного создания нового уникального пользователя")
     void createUniqueUserReturnsSuccess() {
-        Response response = createUser();
+        Response response = userClient.createUser(email, password, name);
+
+        accessToken = response.jsonPath().getString("accessToken");
 
         response.then()
                 .statusCode(200)
@@ -37,21 +40,23 @@ class CreateUserTest {
                 .body("user.email", equalTo(email))
                 .body("user.name", equalTo(name))
                 .body("accessToken", notNullValue());
-
-        accessToken = response.jsonPath().getString("accessToken");
     }
 
     @Test
+    @DisplayName("Создание уже зарегистрированного пользователя")
+    @Description("Проверка ошибки при повторной регистрации пользователя с теми же данными")
     void createAlreadyRegisteredUserReturnsError() {
-        Response firstResponse = createUser();
+        Response firstResponse =
+                userClient.createUser(email, password, name);
+
+        accessToken = firstResponse.jsonPath().getString("accessToken");
 
         firstResponse.then()
                 .statusCode(200)
                 .body("success", equalTo(true));
 
-        accessToken = firstResponse.jsonPath().getString("accessToken");
-
-        Response secondResponse = createUser();
+        Response secondResponse =
+                userClient.createUser(email, password, name);
 
         secondResponse.then()
                 .statusCode(403)
@@ -59,47 +64,22 @@ class CreateUserTest {
     }
 
     @Test
+    @DisplayName("Создание пользователя без email")
+    @Description("Проверка ошибки при создании пользователя без обязательного поля email")
     void createUserWithoutEmailReturnsError() {
-        Map<String, String> user = new HashMap<>();
-        user.put("password", password);
-        user.put("name", name);
-
-        Response response = given()
-                .baseUri(BASE_URL)
-                .contentType("application/json")
-                .body(user)
-                .when()
-                .post("/api/auth/register");
+        Response response =
+                userClient.createUserWithoutEmail(password, name);
 
         response.then()
                 .statusCode(403)
                 .body("success", equalTo(false));
     }
 
-    @Step("Создать пользователя")
-    private Response createUser() {
-        Map<String, String> user = new HashMap<>();
-        user.put("email", email);
-        user.put("password", password);
-        user.put("name", name);
-
-        return given()
-                .baseUri(BASE_URL)
-                .contentType("application/json")
-                .body(user)
-                .when()
-                .post("/api/auth/register");
-    }
-
     @AfterEach
     @Step("Удалить созданного пользователя")
-    void deleteUser() {
+    void tearDown() {
         if (accessToken != null) {
-            given()
-                    .baseUri(BASE_URL)
-                    .header("Authorization", accessToken)
-                    .when()
-                    .delete("/api/auth/user");
+            userClient.deleteUser(accessToken);
         }
     }
 }

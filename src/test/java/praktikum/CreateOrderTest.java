@@ -1,51 +1,44 @@
 
 package praktikum;
 
+import praktikum.client.UserClient;
+import praktikum.client.OrderClient;
+import praktikum.client.IngredientClient;
+import io.qameta.allure.Description;
 import io.qameta.allure.Step;
 import io.restassured.response.Response;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
-import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.notNullValue;
 
 class CreateOrderTest {
 
-    private static final String BASE_URL =
-            "https://qa-stellarburgers.education-services.ru";
+    private final UserClient userClient = new UserClient();
+    private final OrderClient orderClient = new OrderClient();
+    private final IngredientClient ingredientClient = new IngredientClient();
 
-    private final String email = "alien_burger_" + UUID.randomUUID() + "@yandex.ru";
+    private final String email =
+            "alien_burger_" + UUID.randomUUID() + "@yandex.ru";
     private final String password = "SpaceBurger2026";
     private final String name = "Captain Cheeseburger";
 
-    private final List<String> ingredients = List.of(
-            "6acef97852135b001b21a332",
-            "6acef97852135b001b21a32f"
-    );
+    private String accessToken;
 
     @Test
+    @DisplayName("Создание заказа с авторизацией и ингредиентами")
+    @Description("Проверка успешного создания заказа авторизованным пользователем")
     void createOrderWithAuthorizationAndIngredientsReturnsSuccess() {
-        String token = registerUser();
+        registerUser();
 
-        try {
-            createOrder(token, ingredients)
-                    .then()
-                    .statusCode(200)
-                    .body("success", equalTo(true))
-                    .body("order", notNullValue());
-        } finally {
-            deleteUser(token);
-        }
-    }
+        List<String> ingredients = getValidIngredients();
 
-    @Test
-    void createOrderWithoutAuthorizationReturnsSuccess() {
-        createOrder(null, ingredients)
+        orderClient.createOrder(accessToken, ingredients)
                 .then()
                 .statusCode(200)
                 .body("success", equalTo(true))
@@ -53,77 +46,77 @@ class CreateOrderTest {
     }
 
     @Test
+    @DisplayName("Создание заказа без авторизации")
+    @Description("Проверка возможности создать заказ без авторизации")
+    void createOrderWithoutAuthorizationReturnsSuccess() {
+        List<String> ingredients = getValidIngredients();
+
+        orderClient.createOrder(null, ingredients)
+                .then()
+                .statusCode(200)
+                .body("success", equalTo(true))
+                .body("order", notNullValue());
+    }
+
+    @Test
+    @DisplayName("Создание заказа без ингредиентов")
+    @Description("Проверка ошибки при создании заказа без ингредиентов")
     void createOrderWithoutIngredientsReturnsError() {
-        createOrder(null, List.of())
+        orderClient.createOrder(null, List.of())
                 .then()
                 .statusCode(400)
                 .body("success", equalTo(false));
     }
 
     @Test
+    @DisplayName("Создание заказа с неверным хешем ингредиента")
+    @Description("Проверка ошибки при передаче неверного хеша ингредиента")
     void createOrderWithInvalidIngredientHashReturnsError() {
-        createOrder(null, List.of("invalid_hash"))
+        orderClient.createOrder(null, List.of("invalid_hash"))
                 .then()
                 .statusCode(400)
                 .body("success", equalTo(false));
     }
 
     @Test
+    @DisplayName("Создание заказа без ингредиентов с авторизацией")
+    @Description("Проверка ошибки при создании заказа без ингредиентов авторизованным пользователем")
     void createOrderWithAuthorizationWithoutIngredientsReturnsError() {
-        String token = registerUser();
+        registerUser();
 
-        try {
-            createOrder(token, List.of())
-                    .then()
-                    .statusCode(400)
-                    .body("success", equalTo(false));
-        } finally {
-            deleteUser(token);
-        }
-    }
-
-    @Step("Создать заказ")
-    private Response createOrder(String token, List<String> ingredients) {
-        Map<String, Object> order = new HashMap<>();
-        order.put("ingredients", ingredients);
-
-        var request = given()
-                .baseUri(BASE_URL)
-                .contentType("application/json")
-                .body(order);
-
-        if (token != null) {
-            request.header("Authorization", token);
-        }
-
-        return request
-                .when()
-                .post("/api/orders");
+        orderClient.createOrder(accessToken, List.of())
+                .then()
+                .statusCode(400)
+                .body("success", equalTo(false));
     }
 
     @Step("Зарегистрировать пользователя")
-    private String registerUser() {
-        Map<String, String> user = new HashMap<>();
-        user.put("email", email);
-        user.put("password", password);
-        user.put("name", name);
-
-        Response response = given()
-                .baseUri(BASE_URL)
-                .contentType("application/json")
-                .body(user)
-                .post("/api/auth/register");
+    private void registerUser() {
+        Response response =
+                userClient.createUser(email, password, name);
 
         response.then().statusCode(200);
 
-        return response.jsonPath().getString("accessToken");
+        accessToken = response.jsonPath().getString("accessToken");
     }
 
-    @Step("Удалить пользователя")
-    private void deleteUser(String token) {
-        given()
-                .baseUri(BASE_URL)
-                .header("Authorization", token)
-                .delete("/api/auth/user");
+    @Step("Получить валидные ингредиенты")
+    private List<String> getValidIngredients() {
+        Response response = ingredientClient.getIngredients();
+
+        response.then().statusCode(200);
+
+        List<String> ingredients =
+                response.jsonPath().getList("data._id", String.class);
+
+        return ingredients.subList(0, 2);
+    }
+
+    @AfterEach
+    @Step("Удалить созданного пользователя")
+    void tearDown() {
+        if (accessToken != null) {
+            userClient.deleteUser(accessToken);
+        }
     }
 }
